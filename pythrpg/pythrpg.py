@@ -1,6 +1,4 @@
             # BUGS RIGHT NOW:
-    # 'Back' button randomly appears when encountering enemy. Sometimes it doesn't appear sometimes it does
-    # Stick doesn't go away if it's ignored instead of being picked up
 
             # NOTES FOR NEXT TIME:
     # There's still some placeholder stuff in enemy encounters (see comments in that area)
@@ -11,7 +9,6 @@
     # boar2.png is a temporary file, not in use right now
 
 from tkinter import *
-
 import random
 
 # ~~~~~~~~~~~~~ ~~~~~~~~~~~ ~~~~~~~~~~~~~
@@ -37,11 +34,14 @@ worldobject = 0
 
     # Enemies: 0 = Boar
 enemies = [PhotoImage(file='boar.png')]
+enemyhealthvalue = 0
 
     # If something is interactable in the enviro, set = 'y' otherwise set = 'n'
 interactable = 'n'
 
-def show_enviro(caninteract, incombat):
+def show_enviro(caninteract, incombat): # if incombat == -1, true, if incombat == 0, no object and not in combat
+    global enemyhealthvalue
+
     menus.splashtext.destroy()
     game.sky.destroy()
     game.ground.destroy()
@@ -53,21 +53,19 @@ def show_enviro(caninteract, incombat):
     menus.splashtext = Label(tk, font=('Arial', 9, 'italic'), text=game.situation)
     menus.splashtext.place(relx=0.5, rely=0.86, anchor='s')
 
-    if incombat == 'y':    # Enemy encounter
+    if incombat == -1:    # Enemy encounter
+
         game.enemysprite = Label(tk, image=enemies[game.enemy], borderwidth=0)
         game.enemysprite.place(relx=0.5, rely=0.5, anchor='center')
 
-        combat.attackbutton = Button(tk, text='Attack', command=combat.attack)
-        combat.attackbutton.place(relx=0.43, rely=0.97, anchor='s')
-
-        combat.guardbutton = Button(tk, text='Guard', command=combat.guard)
-        combat.guardbutton.place(relx=0.565, rely=0.97, anchor='s')
+        enemyhealthvalue = game.enemies[1][game.enemy]
+        combat.player_turn()
 
     if caninteract == 'y':
         menus.interactbutton = Button(tk, text='Interact', command=interact)
         menus.interactbutton.place(relx=0.5, rely=0.98, anchor='s')
 
-    if incombat != 'y':                                           # None of this stuff appears if in combat
+    if incombat != -1:                                           # None of this stuff appears if in combat
         game.sky = Label(tk, image=skies[currentsky])
         game.sky.place(relx=0.5, rely=0.32, anchor='center')       # Place sky at y 0.32 for 600x600
 
@@ -80,7 +78,7 @@ def show_enviro(caninteract, incombat):
         menus.movebutton = Button(tk, text='Move', command=game.advance)
         menus.movebutton.place(relx=0.98, rely=0.98, anchor='se')
     
-    if worldobject > 1:     # Object
+    if worldobject > 1:     # Objects, start at 2 with stick
         game.object = Label(tk, image=objects[worldobject], borderwidth=0)
         game.object.place(relx=0.5, rely=0.63, anchor='center')
 
@@ -98,7 +96,7 @@ def interact():
 
         game.inventory[0].append('Stick')
         game.inventory[1].append('A simple stick. Better than your fists!')
-        game.inventory[2].append(2)
+        game.inventory[2].append(4)
         game.inventory[3].append('wep')
 
         game.situation = 'You picked up the stick off the ground.'
@@ -133,10 +131,10 @@ class Gameplay:
                               'The road is a dead end, and leads nowhere.',
                               'The road leads to a small village.']
         self.situation = self.situationlist[0]
-        # Enemies format: List 1 is Name, List 2 is Health, List 3 is Damage
+        # Enemies format: List 0 is Name, List 1 is Health, List 2 is Damage
         self.enemies = [['Wild Boar', 'Wolf', 'Bear'],
                         [20, 40, 60],
-                        [2, 5, 10]]
+                        [5, 10, 15]]
         # Enemy numbers: 0 is boar, 1 is wolf, 2 is bear
         self.enemy = 0
         self.enemysprite = Label(tk)    # Enemy graphics
@@ -152,21 +150,23 @@ class Gameplay:
             worldobject = 2
             interactable = 'y'
         else:
-            if self.situation == self.situationlist[1]:
+            if self.situation == self.situationlist[1]: # Should get rid of the stick if it's still there
                 self.object.destroy()
                 menus.interactbutton.destroy()
+                worldobject = 0
+                interactable = 'n'
+
             if random.randint(1, 4) == 1:               # Enemy encounter
                 self.situation = self.situationlist[2]
                 if random.randint(1, self.playerlevel) == 1:    # Choosing the enemy to appear (1 is boar)
                     self.enemy = 0
-                    worldobject = 'y'
-                    game.enemy_encounter()
-                else:                                           # <---- THIS "ELSE" IS TEMPORARY
+                    worldobject = -1    # Worldobject of -1 means enemy encounter
+                    interactable = 'n'
+                else:                                           # <---- THIS "ELSE" IS TEMPORARY (for other enemies)
                     self.enemy = 1
-                    worldobject = 'y'
-                    game.enemy_encounter()
+                    worldobject = -1
 
-            elif random.randint(1,2) == 1:    # If no enemy encounter
+            else:   # If no enemy encounter
                 self.situation = self.situationlist[random.randrange(3,6,2)]    # randrange(3,6,2) returns 3 or 5 randomly, this chooses between road and weather change
                 if self.situation == self.situationlist[3]:     # Weather change
                     currentsky = 1
@@ -174,9 +174,6 @@ class Gameplay:
                     currentground = 1
 
         show_enviro(interactable, worldobject)   # End of advance function
-
-    def enemy_encounter(self):      # DON'T use show_enviro in here, since advance already does it
-        self.situation = f'Look out! A {self.enemies[0][self.enemy]} is approaching!'
 
 game = Gameplay()
 
@@ -186,9 +183,92 @@ class Combat:
         self.guardbutton = Button(tk)       # Button that guards (raises defense) on your turn
         self.continuebutton = Button(tk)    # Button that allows player to continue after battle
         self.enemyhealth = Label(tk)        # Shows enemy health
+        self.attackdamage = 0               # The amount of damage you deal in an attack
+        self.enemyattack = 0                # The amount of damage an enemy deals to you in an attack
+        self.damageindicator = Label(tk)    # Text damage indicator for how much damage is dealt
+        self.combatsplashes = [f'Look out! A {game.enemies[0][game.enemy]} is approaching!',
+                               f'The {game.enemies[0][game.enemy]} stands before you... menacingly!',
+                               f"Doesn't seem like the {game.enemies[0][game.enemy]} wants to be friends..."]
+
+    def player_turn(self):
+        self.enemyhealth.destroy()
+        menus.splashtext.destroy()
+        
+        menus.splashtext = Label(tk, font=('Arial', 10, 'italic'), text=self.combatsplashes[random.randint(0,2)])
+        menus.splashtext.place(relx=0.5, rely=0.86, anchor='s')
+
+        self.attackbutton = Button(tk, text='Attack', command=combat.attack)
+        self.attackbutton.place(relx=0.43, rely=0.97, anchor='s')
+
+        self.guardbutton = Button(tk, text='Guard', command=combat.guard)
+        self.guardbutton.place(relx=0.565, rely=0.97, anchor='s')
+
+        self.enemyhealth = Label(tk, text=f'{game.enemies[0][game.enemy]} health: {enemyhealthvalue}')
+        self.enemyhealth.place(relx=0.5, rely=0.35, anchor='center')
+
+    def enemy_turn(self):
+        menus.splashtext.destroy()
+        self.damageindicator.destroy()
+
+        self.enemyattack = game.enemies[2][game.enemy] + (random.randint(-2, 2))
+
+        menus.splashtext = Label(tk, font=('Arial', 10, 'italic'), text=f'You get hit for       damage!')
+        menus.splashtext.place(relx=0.5, rely=0.86, anchor='s')
+
+        self.damageindicator = Label(tk, font=('Arial', 14, 'bold'), fg='#a83232', text=self.enemyattack)
+        self.damageindicator.place(relx=0.525, rely=0.864, anchor='s')
+
+        game.playerhealth -= self.enemyattack
+
+        menus.healthlabel.destroy()
+        self.healthlabel = Label(tk, font=('Arial', 12), text=(f'Health: {game.playerhealth}'))
+        self.healthlabel.place(relx=0.02, rely=0.02, anchor='nw')
+
+        tk.after(1500, lambda: self.player_turn())
+
+    def win(self):
+        game.enemysprite.destroy()
+
+    def die(self):
+        print()
 
     def attack(self):
-        print()
+        global enemyhealthvalue
+        menus.splashtext.destroy()
+
+        if random.randint(1, 50) == 1:
+            menus.splashtext = Label(tk, font=('Arial', 10, 'italic'), text=f'Your attack missed!')
+            menus.splashtext.place(relx=0.5, rely=0.86, anchor='s')
+
+        else:
+            if random.randint(1, 5) == 1:       # Critical hit check
+                self.attackdamage = ((inven.equippedweapon[1]) * 2) + random.randint(0, 5)
+
+                self.damageindicator = Label(tk, font=('Arial', 14, 'bold'), fg='#fc7e3a', text=f'CRIT! {self.attackdamage} damage!')
+                self.damageindicator.place(relx=0.505, rely=0.864, anchor='s')
+            else:
+                self.attackdamage = (inven.equippedweapon[1]) + random.randint(0, 2)
+                menus.splashtext = Label(tk, font=('Arial', 10, 'italic'), text=f'You dealt        damage!')
+                menus.splashtext.place(relx=0.5, rely=0.86, anchor='s')
+
+                self.damageindicator = Label(tk, font=('Arial', 14, 'bold'), fg='#fc7e3a', text=self.attackdamage)
+                self.damageindicator.place(relx=0.505, rely=0.864, anchor='s')
+
+            enemyhealthvalue -= self.attackdamage
+            if enemyhealthvalue < 0:
+                enemyhealthvalue = 0
+
+            self.enemyhealth.destroy()
+            self.enemyhealth = Label(tk, text=f'{game.enemies[0][game.enemy]} health: {enemyhealthvalue}')
+            self.enemyhealth.place(relx=0.5, rely=0.35, anchor='center')
+
+        self.attackbutton.destroy()
+        self.guardbutton.destroy()
+
+        if enemyhealthvalue <= 0:   # Check if enemy died from the last attack
+            tk.after(1500, lambda: self.win())  # .after format: tk.after(time(ms), lambda: function())
+        else:
+            tk.after(1500, lambda: self.enemy_turn())   # If the enemy has health above 0, it's the enemies turn
 
     def guard(self):
         print()
@@ -198,8 +278,8 @@ combat = Combat()
 class Inventory:
     def __init__(self):
         self.inventorysetup = ''                # Inventory setup: for assembling the inventory display
-        self.equippedweapon = ['Fists', 1]      # Equipped weapon. Index 0 is name, index 1 is attack
-        self.equippedarmor = ['Clothes', 1]     # Equipped armor. Index 0 is name, index 1 is defense
+        self.equippedweapon = ['Fists', 1]      # Equipped weapon. Index 0 is name, index 1 is attack dmg
+        self.equippedarmor = ['Clothes', 1]     # Equipped armor. Index 0 is name, index 1 is defense value
         self.inventorydisplay = Label(tk)       # What actually gets displayed in inventory
         self.inventoryselection = Entry(tk)     # Entry box to choose item to interact with in inventory
         self.equipment = Label(tk)              # Displays equipment and its stats (ATK, DEF)
@@ -343,7 +423,6 @@ class Inventory:
         self.equipbutton.destroy()
         self.dropbutton.destroy()
         self.inventoryselection.destroy()
-        self.backbutton.destroy()
 
         if game.inventory == [[],[],[],[]]:
             self.inventorydisplay = Label(tk, text='_______________________________________________________________________\n\nYour inventory is now empty.\n_______________________________________________________________________', font=('Arial', 11))
@@ -412,6 +491,7 @@ class Interface:
         inven.inventoryselection.destroy()
         inven.dropbutton.destroy()
         inven.equipbutton.destroy()
+        inven.backbutton.destroy()
         inven.equipment.destroy()
 
         show_enviro('n','n')
